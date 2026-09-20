@@ -1,0 +1,16 @@
+{
+  "name": "Tojimari",
+  "short_name": "Tojimari",
+  "description": "いってきます、の合図。玄関を出る前にタップして、時間差でセサミ5を施錠します。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#06080d",
+  "theme_color": "#06080d",
+  "lang": "ja",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

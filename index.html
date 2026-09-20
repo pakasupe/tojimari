@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tojimari">
+<meta name="theme-color" content="#06080d">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+<link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<title>Tojimari</title>
+<style>
+:root {
+  --bg: #06080d;
+  --bg-glow: #0e1a2b;
+  --fg: #eef2f7;
+  --dim: #7f8b9a;
+  --faint: #3a4453;
+  --mint: #5ef0d0;
+  --amber: #ffb85c;
+  --red: #ff6b7a;
+  --panel: rgba(18, 24, 36, 0.92);
+  --line: rgba(255, 255, 255, 0.09);
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Helvetica Neue", sans-serif;
+  --ease: cubic-bezier(.22, .8, .24, 1);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--sans);
+  overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+body { position: fixed; top: 0; left: 0; right: 0; bottom: 0; }
+
+#app {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 42%, var(--bg-glow) 0%, rgba(14,26,43,0) 70%),
+    var(--bg);
+}
+/* ゆっくり漂う光。blur フィルタは使わず、グラデーションだけで描く（iPad mini 4 の負荷と発熱を抑えるため） */
+#app { --c1: rgba(23,64,107,.55); --c2: rgba(15,79,73,.5); }
+#app[data-state="warn"]  { --c1: rgba(107,67,23,.55);  --c2: rgba(79,58,15,.5); }
+#app[data-state="error"] { --c1: rgba(107,23,33,.6);   --c2: rgba(79,15,24,.55); }
+#app::before, #app::after {
+  content: ""; position: absolute; pointer-events: none; border-radius: 50%;
+  width: 90vmax; height: 90vmax; will-change: transform;
+}
+#app::before { left: -34vmax; top: -38vmax; background: radial-gradient(circle at center, var(--c1) 0%, rgba(0,0,0,0) 62%); animation: drift1 26s ease-in-out infinite alternate; }
+#app::after  { right: -38vmax; bottom: -42vmax; background: radial-gradient(circle at center, var(--c2) 0%, rgba(0,0,0,0) 62%); animation: drift2 32s ease-in-out infinite alternate; }
+@keyframes drift1 { to { transform: translate(14vmax, 10vmax) scale(1.12); } }
+@keyframes drift2 { to { transform: translate(-12vmax, -9vmax) scale(1.08); } }
+
+.view {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  opacity: 0; visibility: hidden; transform: scale(.985);
+  transition: opacity .4s var(--ease), transform .5s var(--ease), visibility 0s linear .4s;
+  z-index: 1;
+}
+#app[data-state="clock"]   #v-clock,
+#app[data-state="warn"]    #v-warn,
+#app[data-state="count"]   #v-count,
+#app[data-state="locking"] #v-locking,
+#app[data-state="done"]    #v-done,
+#app[data-state="error"]   #v-error {
+  opacity: 1; visibility: visible; transform: none; transition-delay: 0s;
+}
+
+.eyebrow {
+  font-size: clamp(13px, 1.9vmin, 20px); letter-spacing: .42em; text-transform: uppercase;
+  color: var(--dim); font-weight: 500; padding-left: .42em;
+}
+.hint {
+  font-size: clamp(14px, 2.1vmin, 22px); color: var(--dim); letter-spacing: .12em;
+  display: inline-flex; align-items: center; gap: .9em;
+}
+.dot { width: .55em; height: .55em; border-radius: 50%; background: var(--mint); box-shadow: 0 0 14px var(--mint); animation: pulse 2.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
+
+/* ---------- 時計 ---------- */
+#v-clock { gap: 0; }
+.brand {
+  position: absolute; left: calc(env(safe-area-inset-left) + 34px); top: calc(env(safe-area-inset-top) + 30px);
+  font-size: clamp(13px, 1.8vmin, 18px); letter-spacing: .5em; font-weight: 600; color: var(--dim);
+  display: flex; align-items: center; gap: 1em;
+}
+.brand i { display: block; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--mint); border-top-color: transparent; transform: rotate(-30deg); box-shadow: 0 0 12px rgba(94,240,208,.35); }
+.gear {
+  position: absolute; right: calc(env(safe-area-inset-right) + 20px); top: calc(env(safe-area-inset-top) + 18px);
+  width: 56px; height: 56px; border: 0; background: transparent; color: var(--faint); border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; z-index: 5; transition: color .25s, background .25s;
+}
+.gear:active { color: var(--fg); background: rgba(255,255,255,.06); }
+.gear svg { width: 28px; height: 28px; }
+.dry-badge {
+  position: absolute; top: calc(env(safe-area-inset-top) + 32px); left: 50%; transform: translateX(-50%);
+  padding: .45em 1.1em; border-radius: 999px; border: 1px solid var(--amber); color: var(--amber);
+  font-size: clamp(12px, 1.7vmin, 17px); letter-spacing: .3em; font-weight: 600; display: none;
+}
+#app[data-dry="1"] .dry-badge { display: block; }
+
+.time {
+  font-size: min(19.4vw, 27vh); font-weight: 200; line-height: 1; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; -webkit-font-feature-settings: "tnum"; font-feature-settings: "tnum";
+  white-space: nowrap; text-shadow: 0 0 60px rgba(94,240,208,.16);
+  display: flex; align-items: baseline;
+}
+.time .sep { color: var(--mint); opacity: .85; margin: 0 .02em; animation: blink 2s ease-in-out infinite; }
+.time .sec { color: var(--fg); }
+@keyframes blink { 0%,45% { opacity: .9; } 50%,95% { opacity: .18; } 100% { opacity: .9; } }
+.date { margin-top: 3.2vh; font-size: clamp(18px, 3.3vmin, 34px); color: var(--dim); letter-spacing: .28em; padding-left: .28em; font-weight: 300; }
+.clock-foot { position: absolute; bottom: calc(env(safe-area-inset-bottom) + 6vh); left: 0; right: 0; display: flex; justify-content: center; }
+.setup-note {
+  position: absolute; bottom: calc(env(safe-area-inset-bottom) + 13vh); left: 0; right: 0; text-align: center;
+  color: var(--amber); font-size: clamp(14px, 2vmin, 21px); letter-spacing: .1em; display: none;
+}
+#app[data-configured="0"] .setup-note { display: block; }
+
+/* ---------- 忠告 ---------- */
+#v-warn { gap: 2.4vh; }
+.illus { width: min(72vw, 62vh, 620px); height: auto; overflow: visible; }
+.illus .stroke { fill: none; stroke: var(--amber); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+.illus .soft   { fill: rgba(255,184,92,.08); }
+.illus .dim    { fill: none; stroke: rgba(255,184,92,.4); stroke-width: 3; stroke-linecap: round; }
+.illus .plus   { stroke: var(--faint); stroke-width: 4; stroke-linecap: round; }
+.illus .phone  { animation: floatA 3.6s ease-in-out infinite; }
+.illus .key    { animation: floatB 3.6s ease-in-out infinite; transform-origin: 300px 130px; }
+@keyframes floatA { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+@keyframes floatB { 0%,100% { transform: translateY(-7px) rotate(-24deg); } 50% { transform: translateY(4px) rotate(-24deg); } }
+.warn-title { font-size: clamp(30px, 6.4vmin, 68px); font-weight: 600; letter-spacing: .04em; margin: 0; text-align: center; }
+.warn-sub { font-size: clamp(15px, 2.4vmin, 25px); color: var(--dim); margin: 0; letter-spacing: .08em; text-align: center; padding: 0 6vw; line-height: 1.7; }
+.warn-status { height: 3.4em; display: flex; align-items: center; justify-content: center; margin-top: 1vh; }
+.eq { display: none; gap: 6px; align-items: flex-end; height: 26px; margin-right: 14px; }
+.eq b { width: 6px; background: var(--amber); border-radius: 3px; animation: eq 0.9s ease-in-out infinite; }
+.eq b:nth-child(2) { animation-delay: .15s; } .eq b:nth-child(3) { animation-delay: .3s; } .eq b:nth-child(4) { animation-delay: .45s; }
+@keyframes eq { 0%,100% { height: 6px; } 50% { height: 26px; } }
+#app[data-speaking="1"] .eq { display: flex; }
+.warn-hint { color: var(--amber); opacity: 0; transition: opacity .5s; }
+.warn-hint .dot { background: var(--amber); box-shadow: 0 0 14px var(--amber); }
+#app[data-ready="1"] .warn-hint { opacity: 1; }
+.speak-label { color: var(--dim); font-size: clamp(14px, 2vmin, 20px); letter-spacing: .12em; display: none; }
+#app[data-speaking="1"] .speak-label { display: block; }
+#app[data-speaking="1"] .warn-hint { display: none; }
+
+/* ---------- カウントダウン ---------- */
+#v-count { gap: 2.6vh; }
+.ring-wrap { position: relative; width: min(74vw, 60vh, 640px); aspect-ratio: 1 / 1; display: grid; place-items: center; }
+.ring { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.ring .track { fill: none; stroke: rgba(255,255,255,.07); stroke-width: 6; }
+.ring .prog { fill: none; stroke: var(--mint); stroke-width: 6; stroke-linecap: round; filter: drop-shadow(0 0 10px rgba(94,240,208,.6)); }
+.count-num {
+  font-size: min(40vw, 32vh); font-weight: 200; line-height: 1; font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 50px rgba(94,240,208,.28); display: flex; align-items: baseline;
+}
+.count-unit { font-size: .16em; margin-left: .2em; color: var(--dim); letter-spacing: .1em; font-weight: 300; }
+.ring-label { position: absolute; top: 19%; left: 0; right: 0; text-align: center; }
+.ring-note { position: absolute; bottom: 19%; left: 0; right: 0; text-align: center; color: var(--dim); font-size: clamp(13px, 1.9vmin, 20px); letter-spacing: .14em; }
+.btn {
+  appearance: none; -webkit-appearance: none; font-family: inherit; cursor: pointer; color: var(--fg);
+  background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 999px;
+  padding: .95em 2.4em; font-size: clamp(15px, 2.2vmin, 23px); letter-spacing: .16em; font-weight: 500;
+  transition: transform .15s var(--ease), background .2s, border-color .2s;
+}
+.btn:active { transform: scale(.96); background: rgba(255,255,255,.12); }
+.btn.primary { background: var(--mint); color: #052620; border-color: transparent; font-weight: 700; }
+.btn.primary:active { background: #86f5de; }
+.btn.danger { border-color: rgba(255,107,122,.5); color: var(--red); }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+
+/* ---------- 施錠中 / 完了 / エラー ---------- */
+#v-locking, #v-done, #v-error { gap: 2.4vh; text-align: center; }
+.spinner { width: min(22vmin, 180px); height: min(22vmin, 180px); border-radius: 50%; border: 5px solid rgba(255,255,255,.08); border-top-color: var(--mint); animation: spin 1s linear infinite; filter: drop-shadow(0 0 12px rgba(94,240,208,.5)); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.big { font-size: clamp(34px, 7vmin, 76px); font-weight: 600; letter-spacing: .06em; margin: 0; }
+.mid { font-size: clamp(15px, 2.5vmin, 26px); color: var(--dim); letter-spacing: .1em; margin: 0; line-height: 1.8; padding: 0 8vw; max-width: 900px; }
+.check { width: min(26vmin, 220px); height: min(26vmin, 220px); }
+.check circle { fill: rgba(94,240,208,.08); stroke: var(--mint); stroke-width: 3.5; stroke-dasharray: 302; stroke-dashoffset: 302; }
+.check path { fill: none; stroke: var(--mint); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 60; stroke-dashoffset: 60; }
+#app[data-state="done"] .check circle { animation: draw .7s var(--ease) forwards; }
+#app[data-state="done"] .check path { animation: draw .5s .45s var(--ease) forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.err-icon { width: min(22vmin, 180px); height: min(22vmin, 180px); }
+.err-icon circle { fill: rgba(255,107,122,.08); stroke: var(--red); stroke-width: 3.5; }
+.err-icon path { stroke: var(--red); stroke-width: 6; stroke-linecap: round; }
+.err-detail { font-size: clamp(13px, 1.9vmin, 19px); color: var(--red); background: rgba(255,107,122,.08); border: 1px solid rgba(255,107,122,.22); padding: 1em 1.4em; border-radius: 14px; max-width: min(86vw, 820px); word-break: break-word; line-height: 1.7; text-align: left; letter-spacing: .04em; -webkit-user-select: text; user-select: text; }
+.row { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; margin-top: 1vh; }
+
+/* ---------- 設定シート ---------- */
+.scrim { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.55); z-index: 10; opacity: 0; visibility: hidden; transition: opacity .3s, visibility 0s linear .3s; }
+#app[data-settings="1"] .scrim { opacity: 1; visibility: visible; transition-delay: 0s; }
+.sheet {
+  position: absolute; z-index: 11; left: 50%; top: 50%; width: min(92vw, 680px); max-height: 92%;
+  max-height: min(92%, calc(var(--vvh, 100vh) - 24px));
+  transform: translate(-50%, -46%) scale(.97); opacity: 0; visibility: hidden;
+  transition: opacity .3s var(--ease), transform .4s var(--ease), visibility 0s linear .3s;
+  background: var(--panel); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+  border: 1px solid var(--line); border-radius: 26px; box-shadow: 0 30px 80px rgba(0,0,0,.6);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#app[data-settings="1"] .sheet { opacity: 1; visibility: visible; transform: translate(-50%, -50%); transition-delay: 0s; }
+/* キーボード表示中は、見えている領域の上端に寄せる */
+#app[data-kb="1"] .sheet { top: calc(var(--vvtop, 0px) + 12px); transform: translate(-50%, 0); max-height: calc(var(--vvh, 100vh) - 24px); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 22px 28px 14px; border-bottom: 1px solid var(--line); }
+.sheet-head h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: .12em; }
+.sheet-body { flex: 1 1 auto; min-height: 0; padding: 8px 28px 8px; overflow-y: auto; -webkit-overflow-scrolling: touch; -webkit-user-select: text; user-select: text; }
+.field { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.field:last-child { border-bottom: 0; }
+.field label, .field .lab { display: block; font-size: 15px; color: var(--fg); letter-spacing: .06em; font-weight: 600; margin-bottom: 4px; }
+.field small { display: block; color: var(--dim); font-size: 13px; line-height: 1.6; margin-bottom: 10px; letter-spacing: .03em; }
+.field input[type="text"], .field input[type="url"], .field input[type="email"], .field input[type="password"] {
+  width: 100%; font: inherit; font-size: 17px; color: var(--fg); background: rgba(255,255,255,.05);
+  border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; outline: none; -webkit-appearance: none; appearance: none;
+  -webkit-user-select: text; user-select: text;
+}
+.field input:focus { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(94,240,208,.16); }
+.stepper { display: flex; align-items: center; gap: 14px; }
+.stepper button { width: 56px; height: 56px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--fg); font-size: 28px; font-family: inherit; cursor: pointer; }
+.stepper button:active { background: rgba(255,255,255,.14); }
+.stepper output { min-width: 4.6em; text-align: center; font-size: 34px; font-weight: 300; font-variant-numeric: tabular-nums; }
+.stepper output span { font-size: 15px; color: var(--dim); margin-left: .3em; }
+.switch { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.switch button { flex: none; width: 62px; height: 36px; border-radius: 999px; border: 0; background: rgba(255,255,255,.14); position: relative; cursor: pointer; transition: background .2s; }
+.switch button::after { content: ""; position: absolute; top: 3px; left: 3px; width: 30px; height: 30px; border-radius: 50%; background: #fff; transition: transform .2s var(--ease); }
+.switch button[aria-checked="true"] { background: var(--amber); }
+.switch button[aria-checked="true"]::after { transform: translateX(26px); }
+.tests { display: flex; gap: 12px; flex-wrap: wrap; }
+.tests .btn { padding: .8em 1.4em; font-size: 15px; letter-spacing: .08em; }
+.result { margin-top: 12px; font-size: 14px; line-height: 1.7; min-height: 1.7em; letter-spacing: .03em; word-break: break-word; }
+.result.ok { color: var(--mint); } .result.ng { color: var(--red); } .result.wait { color: var(--dim); }
+.sheet-foot { padding: 16px 28px 22px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 12px; }
+.sheet-foot .btn { padding: .8em 2em; font-size: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
+}
+</style>
+</head>
+<body>
+<div id="app" data-state="clock" data-configured="0" data-dry="0" data-speaking="0" data-ready="0" data-settings="0">
+
+  <!-- 1. 時計 -->
+  <section class="view" id="v-clock" aria-live="off">
+    <div class="brand"><i></i>TOJIMARI</div>
+    <div class="dry-badge">DRY RUN · 施錠しません</div>
+    <button class="gear" id="gear" aria-label="設定">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+    <div class="time" id="time" role="timer" aria-label="現在時刻">
+      <span id="hh">00</span><span class="sep">:</span><span id="mm">00</span><span class="sep">:</span><span class="sec" id="ss">00</span>
+    </div>
+    <div class="date" id="date"></div>
+    <div class="setup-note">はじめに、右上の歯車から設定を入力してください</div>
+    <div class="clock-foot"><span class="hint"><span class="dot"></span>画面をタップして施錠タイマーへ</span></div>
+  </section>
+
+  <!-- 2. 忠告 -->
+  <section class="view" id="v-warn">
+    <div class="eyebrow" style="color:var(--amber)">出発前チェック</div>
+    <svg class="illus" viewBox="0 0 420 260" aria-hidden="true">
+      <g class="phone">
+        <rect class="soft" x="62" y="26" width="118" height="208" rx="24"/>
+        <rect class="stroke" x="62" y="26" width="118" height="208" rx="24"/>
+        <line class="stroke" x1="102" y1="44" x2="140" y2="44"/>
+        <rect class="dim" x="80" y="66" width="82" height="130" rx="8"/>
+        <path class="stroke" d="M111 116v-8a10 10 0 0 1 20 0v8"/>
+        <rect class="stroke" x="105" y="116" width="32" height="24" rx="6" fill="rgba(255,184,92,.18)"/>
+        <circle cx="121" cy="127" r="2.6" fill="var(--amber)"/>
+        <line class="dim" x1="100" y1="164" x2="142" y2="164"/>
+        <line class="dim" x1="108" y1="178" x2="134" y2="178"/>
+      </g>
+      <line class="plus" x1="222" y1="128" x2="246" y2="128"/><line class="plus" x1="234" y1="116" x2="234" y2="140"/>
+      <g class="key">
+        <g transform="translate(300 130) rotate(0)">
+          <circle class="soft" cx="0" cy="-64" r="34"/>
+          <circle class="stroke" cx="0" cy="-64" r="34"/>
+          <circle class="stroke" cx="0" cy="-64" r="11"/>
+          <path class="stroke" d="M-7 -30 V78 a7 7 0 0 0 14 0 V-30"/>
+          <path class="stroke" d="M7 40 h20 M7 58 h14"/>
+        </g>
+      </g>
+    </svg>
+    <h1 class="warn-title">鍵とスマホを持ってね。</h1>
+    <p class="warn-sub">持たずに出ると、外から解錠できなくなります。</p>
+    <div class="warn-status">
+      <span class="eq"><b></b><b></b><b></b><b></b></span>
+      <span class="speak-label">読み上げ中…</span>
+      <span class="hint warn-hint"><span class="dot"></span>もう一度タップでカウントダウン開始</span>
+    </div>
+  </section>
+
+  <!-- 3. カウントダウン -->
+  <section class="view" id="v-count">
+    <div class="ring-wrap">
+      <svg class="ring" viewBox="0 0 320 320" aria-hidden="true">
+        <circle class="track" cx="160" cy="160" r="148"/>
+        <circle class="prog" id="prog" cx="160" cy="160" r="148"/>
+      </svg>
+      <div class="ring-label eyebrow">施錠まで</div>
+      <div class="count-num" id="countNum" role="timer" aria-live="off"><span id="cn">7</span><span class="count-unit">秒</span></div>
+      <div class="ring-note">その間に玄関を出てください</div>
+    </div>
+    <button class="btn" id="cancel">キャンセル</button>
+  </section>
+
+  <!-- 4. 施錠中 -->
+  <section class="view" id="v-locking">
+    <div class="spinner"></div>
+    <p class="big">施錠しています</p>
+    <p class="mid" id="lockingNote">セサミ5に命令を送信中…</p>
+  </section>
+
+  <!-- 5. 完了 -->
+  <section class="view" id="v-done">
+    <svg class="check" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="48"/><path d="M40 62l14 14 27-30"/></svg>
+    <p class="big">施錠しました</p>
+    <p class="mid" id="doneNote">いってらっしゃい。</p>
+  </section>
+
+  <!-- 6. エラー -->
+  <section class="view" id="v-error">
+    <svg class="err-icon" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="48"/><path d="M60 36v30M60 82v.5"/></svg>
+    <p class="big" style="color:var(--red)">施錠できませんでした</p>
+    <div class="err-detail" id="errDetail"></div>
+    <p class="mid" id="errMail"></p>
+    <div class="row">
+      <button class="btn primary" id="retry">もう一度施錠</button>
+      <button class="btn" id="backClock">時計に戻る</button>
+    </div>
+  </section>
+
+  <!-- 設定 -->
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="設定">
+    <div class="sheet-head"><h2>設定</h2></div>
+    <div class="sheet-body">
+      <div class="field">
+        <span class="lab">カウントダウン</span>
+        <small>タップしてから施錠するまでの秒数です。</small>
+        <div class="stepper">
+          <button type="button" id="secMinus" aria-label="減らす">−</button>
+          <output id="secOut">7<span>秒</span></output>
+          <button type="button" id="secPlus" aria-label="増やす">＋</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="fUrl">中継URL（Apps Script）</label>
+        <small>https://script.google.com/macros/s/…/exec の形式です。</small>
+        <input type="url" id="fUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="fToken">合言葉（TOKEN）</label>
+        <small>Apps Script のスクリプト プロパティ「TOKEN」と同じ文字列を入れます。</small>
+        <input type="password" id="fToken" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="fEmail">エラーメールの宛先</label>
+        <small>施錠に失敗したときに通知を送るアドレス。空欄なら、Apps Script を設定した Gmail 宛に送ります。送信元は、その Gmail アカウントです。</small>
+        <input type="email" id="fEmail" placeholder="you@example.com" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <span class="lab">動作テスト</span>
+        <small>実際には施錠・解錠しません。接続と通知だけを確認します。</small>
+        <div class="tests">
+          <button type="button" class="btn" id="testPing">接続テスト</button>
+          <button type="button" class="btn" id="testMail">テストメールを送る</button>
+        </div>
+        <div class="result" id="testResult"></div>
+      </div>
+      <div class="field">
+        <div class="switch">
+          <div>
+            <span class="lab">ドライラン</span>
+            <small style="margin:0">画面の動きだけを確認し、実際には施錠しません。オンの間は時計画面に印が出ます。</small>
+          </div>
+          <button type="button" id="dryToggle" role="switch" aria-checked="false" aria-label="ドライラン"></button>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button type="button" class="btn" id="settingsCancel">閉じる</button>
+      <button type="button" class="btn primary" id="settingsSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 設定 ================= */
+  var KEY = 'tojimari.settings.v1';
+  var DEFAULTS = { seconds: 7, url: '', token: '', email: '', dry: false };
+  var cfg = load();
+
+  function load() {
+    var s = {};
+    try { s = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+    var c = {};
+    for (var k in DEFAULTS) c[k] = (s[k] !== undefined) ? s[k] : DEFAULTS[k];
+    c.seconds = clampSec(c.seconds);
+    return c;
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {} }
+  function clampSec(n) { n = parseInt(n, 10); if (isNaN(n)) n = 7; return Math.max(1, Math.min(120, n)); }
+  function isConfigured() { return !!(cfg.url && cfg.token); }
+
+  /* ================= 共通 ================= */
+  var $ = function (id) { return document.getElementById(id); };
+  var app = $('app');
+  var state = 'clock';
+  var timers = { warn: null, done: null, raf: null, speechGuard: null };
+
+  function go(next) {
+    state = next;
+    app.setAttribute('data-state', next);
+    if (next !== 'warn') { app.setAttribute('data-speaking', '0'); app.setAttribute('data-ready', '0'); }
+  }
+  function refreshFlags() {
+    app.setAttribute('data-configured', isConfigured() || cfg.dry ? '1' : '0');
+    app.setAttribute('data-dry', cfg.dry ? '1' : '0');
+  }
+  function clearTimers() {
+    clearTimeout(timers.warn); clearTimeout(timers.done); clearTimeout(timers.speechGuard);
+    cancelAnimationFrame(timers.raf);
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  /* ================= 時計 ================= */
+  var hh = $('hh'), mm = $('mm'), ss = $('ss'), dateEl = $('date');
+  var WD = ['日', '月', '火', '水', '木', '金', '土'];
+  var lastDay = -1;
+  function tickClock() {
+    var d = new Date();
+    hh.textContent = pad(d.getHours());
+    mm.textContent = pad(d.getMinutes());
+    ss.textContent = pad(d.getSeconds());
+    if (d.getDate() !== lastDay) {
+      lastDay = d.getDate();
+      dateEl.textContent = d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + WD[d.getDay()] + '曜日';
+    }
+    setTimeout(tickClock, 1000 - (Date.now() % 1000) + 8);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { lastDay = -1; } });
+
+  /* ================= 音声 ================= */
+  var voices = [];
+  function loadVoices() { if ('speechSynthesis' in window) voices = speechSynthesis.getVoices() || []; }
+  if ('speechSynthesis' in window) {
+    loadVoices();
+    if (speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', loadVoices);
+    else speechSynthesis.onvoiceschanged = loadVoices;
+  }
+  function speak(text, done) {
+    var finished = false;
+    function fin() { if (finished) return; finished = true; clearTimeout(timers.speechGuard); done(); }
+    // 音声が使えない／終了通知が来ない場合でも先へ進めるための保険
+    timers.speechGuard = setTimeout(fin, 6000);
+    if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') { setTimeout(fin, 1800); return; }
+    try {
+      speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = 'ja-JP'; u.rate = 0.92; u.pitch = 1; u.volume = 1;
+      for (var i = 0; i < voices.length; i++) {
+        if ((voices[i].lang || '').replace('_', '-') === 'ja-JP') { u.voice = voices[i]; break; }
+      }
+      u.onend = fin; u.onerror = fin;
+      speechSynthesis.speak(u);
+    } catch (e) { setTimeout(fin, 1800); }
+  }
+
+  /* ================= 状態遷移 ================= */
+  function enterWarn() {
+    clearTimers();
+    go('warn');
+    app.setAttribute('data-speaking', '1');
+    app.setAttribute('data-ready', '0');
+    speak('鍵とスマホを持ってね。', function () {
+      if (state !== 'warn') return;
+      app.setAttribute('data-speaking', '0');
+      app.setAttribute('data-ready', '1');
+    });
+    // 放置されたら時計に戻る
+    timers.warn = setTimeout(function () { if (state === 'warn') toClock(); }, 60000);
+  }
+
+  var C = 2 * Math.PI * 148;
+  var prog = $('prog'), cn = $('cn'), countNum = $('countNum');
+  prog.style.strokeDasharray = C.toFixed(2);
+  var deadline = 0, totalMs = 0, lastShown = -1;
+
+  function enterCount() {
+    clearTimers();
+    try { speechSynthesis.cancel(); } catch (e) {}
+    totalMs = cfg.seconds * 1000;
+    deadline = performance.now() + totalMs;
+    lastShown = -1;
+    prog.style.transition = 'none';
+    prog.style.strokeDashoffset = '0';
+    cn.textContent = String(cfg.seconds);
+    go('count');
+    timers.raf = requestAnimationFrame(frame);
+  }
+  function frame(now) {
+    if (state !== 'count') return;
+    var remain = deadline - now;
+    if (remain <= 0) {
+      prog.style.strokeDashoffset = C.toFixed(2);
+      cn.textContent = '0';
+      // スリープ復帰などで大幅に遅れたときは、意図しない施錠を避けて中断
+      if (-remain > 30000) { toClock(); return; }
+      return doLock();
+    }
+    var shown = Math.ceil(remain / 1000);
+    if (shown !== lastShown) {
+      lastShown = shown; cn.textContent = String(shown);
+      if (countNum.animate) countNum.animate([{ transform: 'scale(1.05)', opacity: .75 }, { transform: 'scale(1)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.22,.8,.24,1)' });
+    }
+    prog.style.strokeDashoffset = (C * (1 - remain / totalMs)).toFixed(2);
+    timers.raf = requestAnimationFrame(frame);
+  }
+
+  function toClock() { clearTimers(); try { speechSynthesis.cancel(); } catch (e) {} go('clock'); }
+
+  /* ================= 施錠 ================= */
+  function callRelay(action, timeoutMs) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var t = ctrl ? setTimeout(function () { ctrl.abort(); }, timeoutMs || 45000) : null;
+    var body = JSON.stringify({ token: cfg.token, action: action, email: cfg.email, detail: arguments[2] || '' });
+    return fetch(cfg.url, {
+      method: 'POST', redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // プリフライトを避けるため text/plain
+      body: body, signal: ctrl ? ctrl.signal : undefined
+    }).then(function (res) {
+      if (t) clearTimeout(t);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }, function (err) { if (t) clearTimeout(t); throw err; });
+  }
+
+  var lockingStart = 0, lockingTick = null;
+  function doLock() {
+    clearTimers();
+    go('locking');
+    $('lockingNote').textContent = 'セサミ5に命令を送信中…';
+    lockingStart = Date.now();
+    clearInterval(lockingTick);
+    lockingTick = setInterval(function () {
+      var s = Math.round((Date.now() - lockingStart) / 1000);
+      if (s >= 3) $('lockingNote').textContent = '施錠を確認しています… ' + s + '秒';
+    }, 1000);
+
+    var p;
+    if (cfg.dry) {
+      p = new Promise(function (resolve) { setTimeout(function () { resolve({ ok: true, dry: true }); }, 1500); });
+    } else if (!isConfigured()) {
+      p = Promise.resolve({ ok: false, error: '中継URLと合言葉が未設定です。時計画面の歯車から設定してください。', mailed: false });
+    } else {
+      p = callRelay('lock', 50000).catch(function (err) {
+        var msg = (err && err.name === 'AbortError')
+          ? '中継サーバーからの応答がありません。施錠されたかどうか不明です。玄関を確認してください。'
+          : '中継サーバー（Apps Script）に接続できませんでした。iPad の Wi-Fi 接続を確認してください。';
+        // 通信自体が失敗した場合でも、通れば通知だけは試みる
+        return callRelay('report', 20000, (err && err.name ? err.name + ': ' : '') + (err && err.message ? err.message : String(err)))
+          .then(function (r) { return { ok: false, error: msg, mailed: !!(r && r.ok), mailedTo: r && r.mailedTo }; },
+                function () { return { ok: false, error: msg, mailed: false }; });
+      });
+    }
+    p.then(function (r) {
+      clearInterval(lockingTick);
+      if (state !== 'locking') return;
+      if (r && r.ok) return showDone(r);
+      showError(r || { error: '不明なエラー' });
+    });
+  }
+
+  function showDone(r) {
+    go('done');
+    $('doneNote').textContent = r.dry ? 'ドライランのため、実際には施錠していません。' : 'いってらっしゃい。';
+    timers.done = setTimeout(function () { if (state === 'done') go('clock'); }, r.dry ? 3500 : 2800);
+  }
+  function showError(r) {
+    go('error');
+    $('errDetail').textContent = r.error || '不明なエラー';
+    $('errMail').textContent = r.mailed
+      ? 'エラーメールを送信しました（' + (r.mailedTo || '宛先') + '）'
+      : (isConfigured() ? 'エラーメールを送信できませんでした。玄関の鍵を直接確認してください。' : '');
+  }
+
+  /* ================= 画面タップ ================= */
+  app.addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('button, .sheet, .scrim')) return;
+    if (app.getAttribute('data-settings') === '1') return;
+    if (state === 'clock') {
+      if (!isConfigured() && !cfg.dry) { openSettings(); return; }
+      enterWarn();
+    } else if (state === 'warn') {
+      if (app.getAttribute('data-ready') === '1') enterCount();
+    } else if (state === 'done') {
+      go('clock');
+    }
+  });
+  $('cancel').addEventListener('click', toClock);
+  $('backClock').addEventListener('click', toClock);
+  $('retry').addEventListener('click', doLock);
+
+  /* ================= 設定シート ================= */
+  var draftSec = cfg.seconds, draftDry = cfg.dry;
+  function renderSec() { $('secOut').innerHTML = draftSec + '<span>秒</span>'; }
+  function renderDry() { $('dryToggle').setAttribute('aria-checked', draftDry ? 'true' : 'false'); }
+  function setResult(text, cls) { var r = $('testResult'); r.textContent = text; r.className = 'result ' + (cls || ''); }
+
+  function openSettings() {
+    draftSec = cfg.seconds; draftDry = cfg.dry;
+    $('fUrl').value = cfg.url; $('fToken').value = cfg.token; $('fEmail').value = cfg.email;
+    renderSec(); renderDry(); setResult('', '');
+    app.setAttribute('data-settings', '1');
+  }
+  function closeSettings() { app.setAttribute('data-settings', '0'); try { document.activeElement.blur(); } catch (e) {} }
+  function readDraft() {
+    return { url: $('fUrl').value.trim(), token: $('fToken').value, email: $('fEmail').value.trim() };
+  }
+  function relayWith(d, action, ms) {
+    var saved = { url: cfg.url, token: cfg.token, email: cfg.email };
+    cfg.url = d.url; cfg.token = d.token; cfg.email = d.email;
+    var p = callRelay(action, ms);
+    cfg.url = saved.url; cfg.token = saved.token; cfg.email = saved.email;
+    return p;
+  }
+  function validate(d) {
+    if (!d.url) return '中継URLを入力してください。';
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[^\s]+\/exec$/.test(d.url)) return '中継URLの形式が違います（…/exec で終わるURLを入れてください）。';
+    if (!d.token) return '合言葉を入力してください。';
+    if (d.email && !/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(d.email)) return 'メールアドレスの形式が正しくありません。';
+    return '';
+  }
+
+  $('gear').addEventListener('click', function (e) { e.stopPropagation(); openSettings(); });
+  $('scrim').addEventListener('click', closeSettings);
+  $('settingsCancel').addEventListener('click', closeSettings);
+  $('secMinus').addEventListener('click', function () { draftSec = clampSec(draftSec - 1); renderSec(); });
+  $('secPlus').addEventListener('click', function () { draftSec = clampSec(draftSec + 1); renderSec(); });
+  $('dryToggle').addEventListener('click', function () { draftDry = !draftDry; renderDry(); });
+  $('settingsSave').addEventListener('click', function () {
+    var d = readDraft();
+    // ドライランなら URL 未入力のまま保存できる（画面の動作確認だけしたい場合）
+    if (!(draftDry && !d.url && !d.token)) {
+      var msg = validate(d);
+      if (msg) { setResult(msg, 'ng'); return; }
+    }
+    cfg.seconds = draftSec; cfg.dry = draftDry; cfg.url = d.url; cfg.token = d.token; cfg.email = d.email;
+    save(); refreshFlags(); closeSettings();
+  });
+  $('testPing').addEventListener('click', function () {
+    var d = readDraft(), msg = validate(d);
+    if (msg) return setResult(msg, 'ng');
+    setResult('接続を確認しています…', 'wait');
+    relayWith(d, 'ping', 30000).then(function (r) {
+      if (r && r.ok && r.status) {
+        var st = { locked: '施錠中', unlocked: '解錠中', moved: '動作中' }[r.status.CHSesame2Status] || r.status.CHSesame2Status;
+        setResult('接続OK ／ セサミ5は現在「' + st + '」／ 電池 ' + r.status.batteryPercentage + '%', 'ok');
+      } else setResult((r && r.error) || '失敗しました', 'ng');
+    }, function (err) {
+      setResult('接続できませんでした。URLと「全員がアクセス可能」の設定を確認してください。(' + (err && err.message ? err.message : err) + ')', 'ng');
+    });
+  });
+  $('testMail').addEventListener('click', function () {
+    var d = readDraft(), msg = validate(d);
+    if (msg) return setResult(msg, 'ng');
+    setResult('テストメールを送信しています…', 'wait');
+    relayWith(d, 'testMail', 30000).then(function (r) {
+      if (r && r.ok) setResult('送信しました（宛先: ' + r.mailedTo + '）。届いているか確認してください。', 'ok');
+      else setResult((r && r.error) || '失敗しました', 'ng');
+    }, function (err) {
+      setResult('接続できませんでした。(' + (err && err.message ? err.message : err) + ')', 'ng');
+    });
+  });
+
+  // キーボードが出たら、設定シートを見える範囲に収める
+  if (window.visualViewport) {
+    var vv = window.visualViewport;
+    var syncVV = function () {
+      app.style.setProperty('--vvh', vv.height + 'px');
+      app.style.setProperty('--vvtop', vv.offsetTop + 'px');
+      app.setAttribute('data-kb', vv.height < window.innerHeight * 0.8 ? '1' : '0');
+    };
+    vv.addEventListener('resize', syncVV);
+    vv.addEventListener('scroll', syncVV);
+  }
+
+  /* ================= 起動 ================= */
+  refreshFlags();
+  tickClock();
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
+  // 診断・テスト用の入口（画面には出ない）
+  window.__tojimari = { get state() { return state; }, cfg: cfg };
+})();
+</script>
+</body>
+</html>
